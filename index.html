@@ -300,11 +300,13 @@ function schedule(){
 $('#metroBtn').onclick=()=>metro.on?metroStop():metroStart();
 
 /* マイク */
-let stream=null,src=null,analyser=null,buf=null,ds=null;
+let stream=null,src=null,analyser=null,sink=null,buf=null,ds=null;
 async function startMic(){
   getAC();
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('nomedia');
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
+  // 細かい指定で失敗したら普通の指定でやり直す（iPad対策）
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}})}
+  catch(e){if(e&&(e.name==='NotAllowedError'||e.name==='SecurityError'))throw e;stream=await navigator.mediaDevices.getUserMedia({audio:true})}
   try{await ac.resume()}catch(e){}
   if(ac.state!=='running'){
     const wasMetro=metro.on;if(wasMetro)metroStop();
@@ -314,9 +316,11 @@ async function startMic(){
     if(wasMetro)metroStart();
   }
   src=ac.createMediaStreamSource(stream);analyser=ac.createAnalyser();analyser.fftSize=4096;src.connect(analyser);
+  // Safariは出力につながっていないノードを動かさないことがあるので、音量0で出力へつなぐ
+  sink=ac.createGain();sink.gain.value=0;analyser.connect(sink);sink.connect(ac.destination);
   buf=new Float32Array(analyser.fftSize);ds=new Float32Array(analyser.fftSize/2);
 }
-function stopMic(){if(stream)stream.getTracks().forEach(t=>t.stop());if(src)src.disconnect();stream=src=analyser=null}
+function stopMic(){if(stream)stream.getTracks().forEach(t=>t.stop());try{src&&src.disconnect();analyser&&analyser.disconnect();sink&&sink.disconnect()}catch(e){}stream=src=analyser=sink=null}
 
 /* 音程検出（YIN法） */
 let dBuf=null;
@@ -550,7 +554,7 @@ function stop(){
 }
 $('#startBtn').onclick=()=>running?stop():start();
 $('#closeRes').onclick=()=>{$('#result').hidden=true;curNote=null;showNote()};
-document.addEventListener('visibilitychange',async()=>{if(document.visibilityState==='visible'&&running&&navigator.wakeLock){try{wake=await navigator.wakeLock.request('screen')}catch(e){}}});
+document.addEventListener('visibilitychange',async()=>{if(document.visibilityState==='visible'&&ac&&ac.state!=='running'&&ac.state!=='closed'){try{await ac.resume()}catch(e){}}if(document.visibilityState==='visible'&&running&&navigator.wakeLock){try{wake=await navigator.wakeLock.request('screen')}catch(e){}}});
 })();
 </script>
 </body>
