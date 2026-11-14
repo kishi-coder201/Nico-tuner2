@@ -394,7 +394,7 @@ $('#metroSet').onclick=()=>{const b=$('#metroSub');b.hidden=!b.hidden;$('#metroS
 /* 振り子メトロノーム（拍のたびに左右の端に来る） */
 const pxS=$('#pend').getContext('2d');
 const pcB=$('#pendBig'),pxB=pcB.getContext('2d');
-let bigMode=false;const trail=[];
+let bigMode=false;const ghosts=[];let ghostN=-1;
 function drawPend(){
   const pc=bigMode?pcB:$('#pend'),px=bigMode?pxB:pxS;
   const dpr=Math.min(2,window.devicePixelRatio||1),w=pc.clientWidth,h=pc.clientHeight;
@@ -413,17 +413,19 @@ function drawPend(){
   // 振り子の棒とおもり（遅いテンポほどおもりが上）
   const L=140*u,ex=cx+Math.sin(pend.a)*L,ey=base-Math.cos(pend.a)*L;
   const k=0.25+0.6*(1-(S.bpm-30)/210),acc=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#ffd23f';
-  // 大画面だけ：振り子の残像（古いものほど薄く）
+  // 大画面だけ：打点（拍の瞬間）の位置に一瞬だけ残像を残す
   if(bigMode){
-    trail.push(pend.a);if(trail.length>14)trail.shift();
-    for(let i=0;i<trail.length-1;i++){
-      const a=trail[i],al=((i+1)/trail.length)*0.35;
+    if(metro.on&&pend.on&&pend.n!==ghostN){ghostN=pend.n;ghosts.push({a:(pend.n%2?1:-1)*MAX,t:performance.now()})}
+    const now=performance.now(),LIFE=350;
+    while(ghosts.length&&now-ghosts[0].t>LIFE)ghosts.shift();
+    for(const g of ghosts){
+      const al=0.45*(1-(now-g.t)/LIFE);if(al<=0)continue;
       px.globalAlpha=al;px.strokeStyle='#e8e4ff';px.lineWidth=3*u;px.lineCap='round';
-      px.beginPath();px.moveTo(cx,base);px.lineTo(cx+Math.sin(a)*L,base-Math.cos(a)*L);px.stroke();
-      px.fillStyle=acc;px.save();px.translate(cx+Math.sin(a)*L*(k+0.1),base-Math.cos(a)*L*(k+0.1));px.rotate(a);px.fillRect(-11*u,-8*u,22*u,16*u);px.restore();
+      px.beginPath();px.moveTo(cx,base);px.lineTo(cx+Math.sin(g.a)*L,base-Math.cos(g.a)*L);px.stroke();
+      px.fillStyle=acc;px.save();px.translate(cx+Math.sin(g.a)*L*(k+0.1),base-Math.cos(g.a)*L*(k+0.1));px.rotate(g.a);px.fillRect(-11*u,-8*u,22*u,16*u);px.restore();
     }
     px.globalAlpha=1;
-  }else trail.length=0;
+  }else ghosts.length=0;
   px.strokeStyle='#e8e4ff';px.lineWidth=3*u;px.lineCap='round';px.beginPath();px.moveTo(cx,base);px.lineTo(ex,ey);px.stroke();
   const wx=cx+Math.sin(pend.a)*L*(k+0.1),wy=base-Math.cos(pend.a)*L*(k+0.1);
   px.fillStyle=acc;
