@@ -394,7 +394,7 @@ $('#metroSet').onclick=()=>{const b=$('#metroSub');b.hidden=!b.hidden;$('#metroS
 /* 振り子メトロノーム（拍のたびに左右の端に来る） */
 const pxS=$('#pend').getContext('2d');
 const pcB=$('#pendBig'),pxB=pcB.getContext('2d');
-let bigMode=false;
+let bigMode=false;const trail=[];
 function drawPend(){
   const pc=bigMode?pcB:$('#pend'),px=bigMode?pxB:pxS;
   const dpr=Math.min(2,window.devicePixelRatio||1),w=pc.clientWidth,h=pc.clientHeight;
@@ -412,9 +412,21 @@ function drawPend(){
   px.strokeStyle='rgba(255,255,255,.12)';for(let i=-3;i<=3;i++){const a=i*0.14,R1=120*u,R2=128*u;px.beginPath();px.moveTo(cx+Math.sin(a)*R1,base-Math.cos(a)*R1);px.lineTo(cx+Math.sin(a)*R2,base-Math.cos(a)*R2);px.stroke()}
   // 振り子の棒とおもり（遅いテンポほどおもりが上）
   const L=140*u,ex=cx+Math.sin(pend.a)*L,ey=base-Math.cos(pend.a)*L;
+  const k=0.25+0.6*(1-(S.bpm-30)/210),acc=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#ffd23f';
+  // 大画面だけ：振り子の残像（古いものほど薄く）
+  if(bigMode){
+    trail.push(pend.a);if(trail.length>14)trail.shift();
+    for(let i=0;i<trail.length-1;i++){
+      const a=trail[i],al=((i+1)/trail.length)*0.35;
+      px.globalAlpha=al;px.strokeStyle='#e8e4ff';px.lineWidth=3*u;px.lineCap='round';
+      px.beginPath();px.moveTo(cx,base);px.lineTo(cx+Math.sin(a)*L,base-Math.cos(a)*L);px.stroke();
+      px.fillStyle=acc;px.save();px.translate(cx+Math.sin(a)*L*(k+0.1),base-Math.cos(a)*L*(k+0.1));px.rotate(a);px.fillRect(-11*u,-8*u,22*u,16*u);px.restore();
+    }
+    px.globalAlpha=1;
+  }else trail.length=0;
   px.strokeStyle='#e8e4ff';px.lineWidth=3*u;px.lineCap='round';px.beginPath();px.moveTo(cx,base);px.lineTo(ex,ey);px.stroke();
-  const k=0.25+0.6*(1-(S.bpm-30)/210),wx=cx+Math.sin(pend.a)*L*(k+0.1),wy=base-Math.cos(pend.a)*L*(k+0.1);
-  px.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#ffc83d';
+  const wx=cx+Math.sin(pend.a)*L*(k+0.1),wy=base-Math.cos(pend.a)*L*(k+0.1);
+  px.fillStyle=acc;
   px.save();px.translate(wx,wy);px.rotate(pend.a);px.fillRect(-11*u,-8*u,22*u,16*u);px.restore();
   px.fillStyle='#e8e4ff';px.beginPath();px.arc(cx,base,5*u,0,Math.PI*2);px.fill();
 }
