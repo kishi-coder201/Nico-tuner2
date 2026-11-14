@@ -209,7 +209,9 @@ const $=s=>document.querySelector(s);
 const TAU=Math.PI*2;
 const store={get(k,d){try{const v=localStorage.getItem('nicotuner.'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
              set(k,v){try{localStorage.setItem('nicotuner.'+k,JSON.stringify(v))}catch(e){}}};
-const S=Object.assign({a4:442,strict:'hard',trans:0,names:'de',sens:0.65,bpm:96,beats:4,strong:'hi',weak:'lo',vol:0.7},store.get('settings',{}));
+const S=Object.assign({a4:442,strict:'hard',trans:0,names:'de',sens:0.6,bpm:96,beats:4,strong:'hi',weak:'lo',vol:0.7},store.get('settings',{}));
+// 前の版で保存された感度は基準が高すぎるので、一度だけ新しい初期値に戻す
+if(S.sv!==2){S.sens=0.6;S.sv=2;try{localStorage.setItem('nicotuner.settings',JSON.stringify(S))}catch(e){}}
 const save=()=>store.set('settings',S);
 
 /* ---------- 判定のきびしさ（セント） p:ぴったり g:おしい h:キープ ---------- */
@@ -261,8 +263,8 @@ drawZones();
 const meter=$('#meter');
 for(let c=-40;c<=40;c+=10){const t=document.createElement('div');t.className='tick'+(c===0?' c':'');t.style.left=(50+c)+'%';meter.appendChild(t)}
 // 感度スライダー(0..1) → 判定するRMSのしきい値（右ほど小さい音でも反応）
-const sensToRms=()=>0.06*Math.pow(10,-1.6*S.sens);   // 0.06 〜 0.0015
-const rmsToLevel=r=>Math.max(0,Math.min(1,(Math.log10(Math.max(r,1e-5))+3)/2.7));
+const sensToRms=()=>0.02*Math.pow(10,-2*S.sens);   // 0.02 〜 0.0002（iPadの小さいマイク音にも反応）
+const rmsToLevel=r=>Math.max(0,Math.min(1,(Math.log10(Math.max(r,1e-5))+4)/3.5));
 const sensToLevel=()=>rmsToLevel(sensToRms());
 $('#lvlTh').style.left=(sensToLevel()*100)+'%';$('#lvlTh2').style.left=(sensToLevel()*100)+'%';
 
@@ -404,9 +406,9 @@ function update(dt){
   const hint=$('#hint');
   if(!running){hint.className='';}
   else if(!sounding){
-    silentT=lastRms<0.0005?silentT+dt:0;
+    silentT=lastRms<0.00005?silentT+dt:0;
     hint.className='';
-    hint.textContent=silentT>3?'マイクの音が届いていません':(lastRms>0.0005&&lastRms<sensToRms()?'音が小さいよ（マイク感度を上げてね）':'音を出してね');
+    hint.textContent=silentT>3?'マイクの音が届いていません':(lastRms>=0.00005&&lastRms<sensToRms()?'音が小さいよ（マイク感度を上げてね）':'音を出してね');
     needle.style.background='var(--muted)';$('#centsVal').textContent='—'}
   else{
     const a=Math.abs(cents);$('#centsVal').textContent=(cents>=0?'＋':'−')+a.toFixed(1)+'¢';
