@@ -333,12 +333,12 @@ function playClick(kind,t,vol){
   const run=(o,d)=>{o.start(t);o.stop(t+d+0.03)};
   if(kind==='band1'||kind==='band2'){
     // 合奏用：耳がいちばん敏感な2〜4kHz帯の鋭いアタック＋芯のある音程で、大人数の音に埋もれにくくする
-    const hi=kind==='band1',f=hi?3150:2350;
+    const hi=kind==='band1',f=hi?3400:2700;   // チューナーが聞く範囲（〜2kHz）より上だけで鳴らす
     const nb=c.createBuffer(1,Math.floor(c.sampleRate*0.03),c.sampleRate),nd=nb.getChannelData(0);
     for(let i=0;i<nd.length;i++)nd[i]=(Math.random()*2-1)*Math.pow(1-i/nd.length,3);
-    const ns=c.createBufferSource();ns.buffer=nb;const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=1800;ns.connect(hp);env(hp,1,0.025);ns.start(t);
+    const ns=c.createBufferSource();ns.buffer=nb;const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=3000;ns.connect(hp);env(hp,1,0.025);ns.start(t);
     const a=osc('square',f);const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=7000;a.connect(lp);env(lp,0.8,hi?0.06:0.045);run(a,0.06);
-    const b=osc('triangle',f/2);env(b,0.7,hi?0.08:0.05);run(b,0.08);
+    const b=osc('sine',f*1.5);env(b,0.6,hi?0.07:0.05);run(b,0.07);
   }
   else if(kind==='hi'){const o=osc('sine',1760);env(o,0.9,0.05);run(o,0.05)}
   else if(kind==='lo'){const o=osc('sine',880);env(o,0.9,0.06);run(o,0.06)}
@@ -435,7 +435,10 @@ async function startMic(){
     try{await ac.resume()}catch(e){}
     if(wasMetro)metroStart();
   }
-  src=ac.createMediaStreamSource(stream);analyser=ac.createAnalyser();analyser.fftSize=4096;src.connect(analyser);
+  src=ac.createMediaStreamSource(stream);analyser=ac.createAnalyser();analyser.fftSize=4096;
+  // 2kHzより上をカット：楽器の音程（〜1600Hz）は残し、合奏用クリック（2.5kHz以上）を取り除く
+  const lp1=ac.createBiquadFilter(),lp2=ac.createBiquadFilter();lp1.type=lp2.type='lowpass';lp1.frequency.value=lp2.frequency.value=2000;lp1.Q.value=lp2.Q.value=0.7;
+  src.connect(lp1);lp1.connect(lp2);lp2.connect(analyser);
   // Safariは出力につながっていないノードを動かさないことがあるので、音量0で出力へつなぐ
   sink=ac.createGain();sink.gain.value=0;analyser.connect(sink);sink.connect(ac.destination);
   buf=new Float32Array(analyser.fftSize);ds=new Float32Array(analyser.fftSize/2);
@@ -493,7 +496,14 @@ function update(dt){
   const st=STRICT[S.strict];
   cool=Math.max(0,cool-dt);flash=Math.max(0,flash-dt*2.5);
   let res=null;
-  if(running&&analyser){if(clickNear()){res=lastRes;analyser.getFloatTimeDomainData(buf)}else{res=analyse();lastRes=res}elapsed+=dt}
+  if(running&&analyser){
+    if(clickNear()){
+      // クリックが鳴っている間も判定は続ける。ただし今の音とちがう音程が出たらクリックの影響とみなして無視
+      const saved=hist.slice(),r0=analyse();
+      if(r0&&curNote!==null&&r0.note===curNote){res=r0;lastRes=r0}
+      else{hist.length=0;hist.push(...saved);res=(lastRms>=sensToRms()&&lastRes&&lastRes.note===curNote)?lastRes:null}
+    }else{res=analyse();lastRes=res}
+    elapsed+=dt}
   sounding=false;
   if(res){
     if(res.note!==curNote){
