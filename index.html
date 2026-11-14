@@ -96,6 +96,7 @@ details[open].card summary::after{content:"－"}
 .level i{position:absolute;inset:0 auto 0 0;background:var(--good);width:0}
 .level b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--warn)}
 .note-s{font-size:12px;color:var(--muted)}
+.microw{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
 #err{color:var(--warn);font-size:13px}
 button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 
@@ -128,6 +129,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
       <div class="reward" id="reward"><span></span></div>
       <div class="meterWrap">
         <div id="hint">スタートを押して音を出そう</div>
+        <div class="microw"><span>マイク</span><div class="level"><i id="lvl2"></i><b id="lvlTh2"></b></div></div>
         <div class="meter" id="meter">
           <div class="zone ok" id="zoneOk"></div>
           <div class="zone good" id="zoneGood"></div>
@@ -207,7 +209,7 @@ const $=s=>document.querySelector(s);
 const TAU=Math.PI*2;
 const store={get(k,d){try{const v=localStorage.getItem('nicotuner.'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
              set(k,v){try{localStorage.setItem('nicotuner.'+k,JSON.stringify(v))}catch(e){}}};
-const S=Object.assign({a4:442,strict:'hard',trans:0,names:'de',sens:0.35,bpm:96,beats:4,strong:'hi',weak:'lo',vol:0.7},store.get('settings',{}));
+const S=Object.assign({a4:442,strict:'hard',trans:0,names:'de',sens:0.65,bpm:96,beats:4,strong:'hi',weak:'lo',vol:0.7},store.get('settings',{}));
 const save=()=>store.set('settings',S);
 
 /* ---------- 判定のきびしさ（セント） p:ぴったり g:おしい h:キープ ---------- */
@@ -246,7 +248,7 @@ function onSetting(k){
   if(k==='bpm')$('#bpmVal').textContent=S.bpm;
   if(k==='beats')buildDots();
   if(k==='strict')drawZones();
-  if(k==='sens')$('#lvlTh').style.left=(sensToLevel()*100)+'%';
+  if(k==='sens'){$('#lvlTh').style.left=(sensToLevel()*100)+'%';$('#lvlTh2').style.left=(sensToLevel()*100)+'%'}
   if(k==='names'||k==='trans')showNote();
 }
 const setBpm=v=>{S.bpm=Math.max(30,Math.min(240,v));$('#bpm').value=S.bpm;$('#bpmVal').textContent=S.bpm;save()};
@@ -262,7 +264,7 @@ for(let c=-40;c<=40;c+=10){const t=document.createElement('div');t.className='ti
 const sensToRms=()=>0.06*Math.pow(10,-1.6*S.sens);   // 0.06 〜 0.0015
 const rmsToLevel=r=>Math.max(0,Math.min(1,(Math.log10(Math.max(r,1e-5))+3)/2.7));
 const sensToLevel=()=>rmsToLevel(sensToRms());
-$('#lvlTh').style.left=(sensToLevel()*100)+'%';
+$('#lvlTh').style.left=(sensToLevel()*100)+'%';$('#lvlTh2').style.left=(sensToLevel()*100)+'%';
 
 /* ---------- 音声 ---------- */
 let ac=null;
@@ -302,7 +304,15 @@ let stream=null,src=null,analyser=null,buf=null,ds=null;
 async function startMic(){
   getAC();
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('nomedia');
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
+  try{await ac.resume()}catch(e){}
+  if(ac.state!=='running'){
+    const wasMetro=metro.on;if(wasMetro)metroStop();
+    try{ac.close()}catch(e){}
+    ac=new (window.AudioContext||window.webkitAudioContext)();
+    try{await ac.resume()}catch(e){}
+    if(wasMetro)metroStart();
+  }
   src=ac.createMediaStreamSource(stream);analyser=ac.createAnalyser();analyser.fftSize=4096;src.connect(analyser);
   buf=new Float32Array(analyser.fftSize);ds=new Float32Array(analyser.fftSize/2);
 }
@@ -325,14 +335,14 @@ function yin(x,sr){
   if(tau>minTau&&tau<maxTau){const a=d[tau-1],b=d[tau],c=d[tau+1],den=a+c-2*b;if(den)bt=tau+(a-c)/(2*den)}
   return {freq:sr/bt,clarity:1-d[tau]};
 }
-let hist=[];
+let hist=[],lastRms=0,silentT=0;
 function analyse(){
   analyser.getFloatTimeDomainData(buf);
   let rms=0;for(let i=0;i<buf.length;i++)rms+=buf[i]*buf[i];rms=Math.sqrt(rms/buf.length);
-  $('#lvl').style.width=(rmsToLevel(rms)*100)+'%';
+  lastRms=rms;
+  const lv=(rmsToLevel(rms)*100)+'%';$('#lvl').style.width=lv;$('#lvl2').style.width=lv;
   if(rms<sensToRms()){hist.length=0;return null}
-  for(let i=0;i<ds.length;i++)ds[i]=(buf[2*i]+buf[2*i+1])*0.5;
-  const r=yin(ds,ac.sampleRate/2);
+  const r=yin(buf,ac.sampleRate);
   if(!r||r.clarity<0.8)return null;
   if(hist.length){const m=median(hist);if(Math.abs(12*Math.log2(r.freq/m))>0.7)hist.length=0}
   hist.push(r.freq);if(hist.length>5)hist.shift();
@@ -389,7 +399,11 @@ function update(dt){
   needle.style.left=(50+Math.max(-50,Math.min(50,dispCents)))+'%';
   const hint=$('#hint');
   if(!running){hint.className='';}
-  else if(!sounding){hint.className='';hint.textContent='音を出してね';needle.style.background='var(--muted)';$('#centsVal').textContent='—'}
+  else if(!sounding){
+    silentT=lastRms<0.0005?silentT+dt:0;
+    hint.className='';
+    hint.textContent=silentT>3?'マイクの音が届いていません':(lastRms>0.0005&&lastRms<sensToRms()?'音が小さいよ（マイク感度を上げてね）':'音を出してね');
+    needle.style.background='var(--muted)';$('#centsVal').textContent='—'}
   else{
     const a=Math.abs(cents);$('#centsVal').textContent=(cents>=0?'＋':'−')+a.toFixed(1)+'¢';
     if(a<=st.p){hint.className='good';hint.textContent='ぴったり！そのままキープ';needle.style.background='var(--good)'}
@@ -532,7 +546,7 @@ function stop(){
   $('#rSound').textContent=soundTime>=60?Math.floor(soundTime/60)+'分'+Math.round(soundTime%60)+'秒':soundTime.toFixed(1)+'秒';
   $('#rBest').textContent=soundTime>0.3?Math.round(100*perfectTime/soundTime)+'%':'—';
   $('#result').hidden=false;
-  $('#hint').textContent='スタートを押して音を出そう';$('#centsVal').textContent='0¢';$('#lvl').style.width='0';
+  $('#hint').textContent='スタートを押して音を出そう';$('#centsVal').textContent='0¢';$('#lvl').style.width='0';$('#lvl2').style.width='0';silentT=0;
 }
 $('#startBtn').onclick=()=>running?stop():start();
 $('#closeRes').onclick=()=>{$('#result').hidden=true;curNote=null;showNote()};
